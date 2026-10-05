@@ -1,0 +1,307 @@
+import UIKit
+import COR
+
+@MainActor
+private func label(_ size: CGFloat, weight: UIFont.Weight = .regular, color: UIColor = .white) -> UILabel {
+	let label = UILabel()
+	label.font = .systemFont(ofSize: size, weight: weight)
+	label.textColor = color
+	label.adjustsFontSizeToFitWidth = true
+	label.minimumScaleFactor = 0.6
+	return label
+}
+
+final class MenuButton: UIButton {
+	override var canBecomeFocused: Bool { false }
+
+	init(_ title: String, action: @escaping () -> Void) {
+		super.init(frame: .zero)
+		setTitle(title, for: .normal)
+		titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+		titleLabel?.adjustsFontSizeToFitWidth = true
+		layer.cornerRadius = 3
+		layer.borderWidth = 1
+		focus(false)
+		addAction(UIAction { _ in action() }, for: .touchUpInside)
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+
+	func focus(_ focused: Bool) {
+		setTitleColor(focused ? Colors.gold : .white, for: .normal)
+		backgroundColor = focused ? Colors.gold.withAlphaComponent(0.13) : Colors.panel
+		layer.borderColor = (focused ? Colors.gold : Colors.muted.withAlphaComponent(0.3)).cgColor
+	}
+}
+
+private final class HealthBar: UIView {
+	private let fill = UIView()
+	var progress: CGFloat = 1 { didSet { setNeedsLayout() } }
+	var reversed = false
+
+	init() {
+		super.init(frame: .zero)
+		backgroundColor = UIColor(white: 0.16, alpha: 1)
+		layer.cornerRadius = 2
+		clipsToBounds = true
+		addSubview(fill)
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+	func color(_ color: UIColor) { fill.backgroundColor = color }
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+		let width = bounds.width * max(0, min(1, progress))
+		fill.frame = CGRect(x: reversed ? bounds.width - width : 0, y: 0, width: width, height: bounds.height)
+	}
+}
+
+final class HUD: UIView {
+	private let names: InlineArray<2, UILabel> = .init { _ in label(16, weight: .bold) }
+	private let bars: InlineArray<2, HealthBar> = .init { _ in HealthBar() }
+	private let wins: InlineArray<2, UILabel> = .init { _ in label(17, color: Colors.gold) }
+	private let combos: InlineArray<2, UILabel> = .init { _ in label(16, weight: .bold, color: Colors.gold) }
+	private let round = label(11, weight: .semibold, color: Colors.muted)
+	private let banner = label(48, weight: .heavy, color: Colors.gold)
+	private var health: InlineArray<2, Int> = .init(repeating: -1)
+	private var scores: InlineArray<2, Int> = .init(repeating: -1)
+	private var roundNumber = 0
+	let pauseButton: UIButton
+
+	init(pause: @escaping () -> Void) {
+		pauseButton = MenuButton("Ⅱ", action: pause)
+		super.init(frame: .zero)
+		for i in 0 ..< 2 { addSubview(names[i]); addSubview(bars[i]); addSubview(wins[i]); addSubview(combos[i]) }
+		bars[1].reversed = true
+		names[1].textAlignment = .right
+		wins[1].textAlignment = .right
+		combos[1].textAlignment = .right
+		round.textAlignment = .center
+		banner.textAlignment = .center
+		addSubview(round)
+		addSubview(banner)
+		addSubview(pauseButton)
+		pauseButton.accessibilityLabel = "Pause"
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+
+	func configure(_ first: Character, _ second: Character) {
+		names[0].text = first.name
+		names[1].text = second.name
+		bars[0].color(first.color)
+		bars[1].color(second.color)
+		health = .init(repeating: -1)
+		scores = .init(repeating: -1)
+		roundNumber = 0
+	}
+
+	func update(_ fight: borrowing Fight) {
+		for i in 0 ..< 2 {
+			let fighter = fight.fighters[i]
+			if health[i] != fighter.health {
+				health[i] = fighter.health
+				bars[i].progress = CGFloat(fighter.health) / CGFloat(Fighter.maxHealth)
+			}
+			if scores[i] != fighter.wins {
+				scores[i] = fighter.wins
+				wins[i].text = String(repeating: "● ", count: fighter.wins) + String(repeating: "○ ", count: 2 - fighter.wins)
+			}
+			combos[i].isHidden = fighter.comboHits < 2 || fight.frame - fighter.comboFrame > 90
+			if !combos[i].isHidden {
+				let text = "\(fighter.comboHits) HITS  ·  \(fighter.comboDamage / 10)%"
+				if combos[i].text != text { combos[i].text = text }
+			}
+		}
+		if roundNumber != fight.round { roundNumber = fight.round; round.text = "ROUND \(fight.round)" }
+		let text: String
+		switch fight.phase {
+		case .intro: text = fight.phaseFrame < 40 ? "ROUND \(fight.round)" : "FIGHT"
+		case .roundEnd: text = fight.winner.map { "PLAYER \($0 + 1) WINS" } ?? "DOUBLE KO"
+		default: text = ""
+		}
+		banner.isHidden = text.isEmpty
+		if banner.text != text { banner.text = text }
+	}
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+		let w = bounds.width, h = bounds.height
+		let margin: CGFloat = max(16, w * 0.028)
+		let width = w * 0.40
+		for i in 0 ..< 2 {
+			let x = i == 0 ? margin : w - margin - width
+			names[i].frame = CGRect(x: x, y: 12, width: width, height: 23)
+			bars[i].frame = CGRect(x: x, y: 39, width: width, height: 13)
+			wins[i].frame = CGRect(x: x, y: 58, width: width, height: 22)
+			combos[i].frame = CGRect(x: x, y: 85, width: width, height: 25)
+		}
+		round.frame = CGRect(x: w / 2 - 50, y: 15, width: 100, height: 18)
+		pauseButton.frame = CGRect(x: w / 2 - 17, y: 40, width: 34, height: 28)
+		banner.frame = CGRect(x: 30, y: h * 0.34, width: w - 60, height: 66)
+	}
+}
+
+final class MenuOverlay: UIView {
+	private let kicker = label(10, weight: .semibold, color: Colors.gold)
+	private let title = label(36, weight: .heavy)
+	private let subtitle = label(13, color: Colors.muted)
+	private let footer = label(11, color: Colors.muted)
+	private var buttons: [MenuButton] = []
+	private(set) var selection = 0
+	private var activate: (Int) -> Void = { _ in }
+
+	override init(frame: CGRect) {
+		super.init(frame: frame)
+		backgroundColor = Colors.background.withAlphaComponent(0.82)
+		kicker.text = "LOCAL KOMBAT"
+		for label in [kicker, title, subtitle, footer] { label.textAlignment = .center; addSubview(label) }
+		footer.numberOfLines = 2
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+
+	func show(title: String, subtitle: String, rows: [String], footer: String, activate: @escaping (Int) -> Void) {
+		self.title.text = title
+		self.subtitle.text = subtitle
+		self.footer.text = footer
+		self.activate = activate
+		selection = 0
+		for button in buttons { button.removeFromSuperview() }
+		buttons = rows.enumerated().map { index, text in
+			let button = MenuButton(text) { [weak self] in self?.activate(index) }
+			addSubview(button)
+			return button
+		}
+		focus(0)
+		setNeedsLayout()
+	}
+
+	func focus(_ index: Int) {
+		guard !buttons.isEmpty else { return }
+		selection = (index + buttons.count) % buttons.count
+		for (i, button) in buttons.enumerated() { button.focus(i == selection) }
+	}
+
+	func confirm() { activate(selection) }
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+		let w = bounds.width, h = bounds.height
+		kicker.frame = CGRect(x: 20, y: 12, width: w - 40, height: 14)
+		title.frame = CGRect(x: 20, y: 31, width: w - 40, height: 43)
+		title.font = .systemFont(ofSize: min(36, h * 0.10), weight: .heavy)
+		subtitle.frame = CGRect(x: 24, y: 77, width: w - 48, height: 22)
+		let rowHeight = min(43, max(32, h * 0.105))
+		let total = CGFloat(buttons.count) * (rowHeight + 7) - 7
+		let start = min(max(106, (h - total) / 2 + 25), h - total - 42)
+		let width = min(310, w * 0.47)
+		for (index, button) in buttons.enumerated() {
+			button.frame = CGRect(x: (w - width) / 2, y: start + CGFloat(index) * (rowHeight + 7), width: width, height: rowHeight)
+		}
+		footer.frame = CGRect(x: 20, y: h - 36, width: w - 40, height: 30)
+	}
+}
+
+final class SelectionView: UIView {
+	private let title = label(27, weight: .heavy)
+	private let hint = label(12, color: Colors.muted)
+	private let names: InlineArray<2, UILabel> = .init { _ in label(17, weight: .bold) }
+	private let devices: InlineArray<2, UILabel> = .init { _ in label(11, color: Colors.muted) }
+	private var cards: [MenuButton] = []
+	private let ready: MenuButton
+	var choose: (Character) -> Void = { _ in }
+	var confirm: () -> Void = {}
+
+	override init(frame: CGRect) {
+		ready = MenuButton("READY", action: {})
+		super.init(frame: frame)
+		title.text = "CHOOSE YOUR FIGHTER"
+		title.textAlignment = .center
+		hint.textAlignment = .center
+		addSubview(title); addSubview(hint)
+		for i in 0 ..< 2 { addSubview(names[i]); addSubview(devices[i]); devices[i].numberOfLines = 2 }
+		names[1].textAlignment = .right; devices[1].textAlignment = .right
+		for character in Character.allCases {
+			let card = MenuButton(character.name) { [weak self] in self?.choose(character) }
+			card.titleLabel?.font = .systemFont(ofSize: 12, weight: .bold)
+			cards.append(card)
+			addSubview(card)
+		}
+		ready.addAction(UIAction { [weak self] _ in self?.confirm() }, for: .touchUpInside)
+		addSubview(ready)
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+
+	func update(_ choices: borrowing InlineArray<2, Character>, ready: borrowing InlineArray<2, Bool>, inputs: InputController, solo: Bool, cursor: Int) {
+		hint.text = solo ? (cursor == 0 ? "Choose your fighter · A / Enter to ready" : "Choose your opponent · A / Enter to fight") : "Each player chooses with their own D-pad · A / Enter to ready"
+		for i in 0 ..< 2 {
+			names[i].text = "\(solo && i == 1 ? "CPU" : "PLAYER \(i + 1)")  ·  \(choices[i].name)\(ready[i] ? "  ✓" : "")"
+			names[i].textColor = choices[i].color
+			devices[i].text = solo && i == 1 ? "Local opponent" : inputs.name(for: i)
+		}
+		for (index, card) in cards.enumerated() {
+			let character = Character(rawValue: UInt8(index))!
+			var suffix = ""
+			if choices[0] == character { suffix += " · P1" }
+			if choices[1] == character { suffix += solo ? " · CPU" : " · P2" }
+			card.setTitle(character.name + suffix, for: .normal)
+			card.focus(choices[cursor] == character)
+			card.layer.borderColor = (choices[cursor] == character ? character.color : Colors.muted.withAlphaComponent(0.3)).cgColor
+		}
+	}
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+		let w = bounds.width, h = bounds.height, margin: CGFloat = 20
+		title.frame = CGRect(x: margin, y: 12, width: w - margin * 2, height: 35)
+		hint.frame = CGRect(x: margin, y: 50, width: w - margin * 2, height: 22)
+		for i in 0 ..< 2 {
+			let width = w * 0.44
+			let x = i == 0 ? margin : w - margin - width
+			names[i].frame = CGRect(x: x, y: 81, width: width, height: 25)
+			devices[i].frame = CGRect(x: x, y: 108, width: width, height: 32)
+		}
+		let gap: CGFloat = 8, width = (w - margin * 2 - gap * 3) / 4
+		for (i, card) in cards.enumerated() { card.frame = CGRect(x: margin + CGFloat(i) * (width + gap), y: h - 104, width: width, height: 43) }
+		ready.frame = CGRect(x: w / 2 - 75, y: h - 49, width: 150, height: 34)
+	}
+}
+
+final class ControlsView: UIView {
+	private let title = label(25, weight: .heavy)
+	private let left = label(13, color: .white)
+	private let right = label(13, color: .white)
+	private let back: MenuButton
+
+	init(back action: @escaping () -> Void) {
+		back = MenuButton("BACK", action: action)
+		super.init(frame: .zero)
+		backgroundColor = Colors.background.withAlphaComponent(0.95)
+		title.text = "CONTROLS & MOVES"
+		title.textAlignment = .center
+		left.numberOfLines = 0; right.numberOfLines = 0
+		left.text = "D-PAD / ARROWS\nMove · crouch · jump\nDouble-tap F / B: dash\n\n1  X / Square  or A\n2  Y / Triangle  or S\n3  A / Cross  or Z\n4  B / Circle  or X\n\nBLOCK  RT / R2 / Space\nPAUSE  Menu / Escape\n\nStand-block overheads.\nCrouch-block lows."
+		for view in [title, left, right, back] { addSubview(view) }
+	}
+
+	required init?(coder: NSCoder) { fatalError() }
+
+	func configure(_ first: Character, _ second: Character) {
+		right.text = "STRINGS\n1, 1, 2  ·  knockdown\n2, 1, 2  ·  launcher\n3, 4     ·  low\n\n\(first.name)\n\(first.moves)\n\n\(second.name)\n\(second.moves)\n\nF / B = toward / away"
+	}
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+		let w = bounds.width, h = bounds.height
+		title.frame = CGRect(x: 20, y: 12, width: w - 40, height: 32)
+		let size: CGFloat = h < 400 ? 12 : 15
+		left.font = .monospacedSystemFont(ofSize: size, weight: .regular)
+		right.font = .monospacedSystemFont(ofSize: size, weight: .regular)
+		left.frame = CGRect(x: w * 0.09, y: 49, width: w * 0.40, height: h - 107)
+		right.frame = CGRect(x: w * 0.54, y: 49, width: w * 0.40, height: h - 107)
+		back.frame = CGRect(x: w / 2 - 75, y: h - 47, width: 150, height: 33)
+	}
+}
