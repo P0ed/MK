@@ -24,13 +24,20 @@ public struct Fighter: Sendable {
 	public internal(set) var comboHits = 0
 	public internal(set) var comboDamage = 0
 	public internal(set) var comboFrame = -100
-	public var airborne: Bool { y > 0 || vy != 0 }
+	public var moveData: MoveData { character.data(for: move) }
+
+	public var airborne: Bool {
+		y > 0 || vy != 0
+	}
 	public var crouching: Bool {
-		!airborne && (pose == .crouch || (pose == .guard && input.vertical < 0)
-			|| move == .crouch1 || move == .uppercut || move == .lowKick || move == .sweep || move == .slide)
+		!airborne && (
+			pose == .crouch || (pose == .guard && input.vertical < 0)
+				|| move == .crouch1 || move == .uppercut || move == .lowKick
+				|| move == .sweep || move == .slide
+		)
 	}
 	public var intangible: Bool {
-		pose == .down || (move.isTeleport && moveFrame >= 4 && moveFrame < 10)
+		pose == .down || (move.isTeleport && moveFrame >= 4 && moveFrame < (move == .smokeTeleport ? 14 : 10))
 	}
 
 	var input: Input = []
@@ -141,9 +148,8 @@ extension Fighter {
 	}
 
 	var hitbox: Box {
-		let data = move.data
-		let staff: Int32 = character == .jade && !move.isKick && !move.isSpecial ? 75 : 0
-		let reach = data.reach + staff
+		let data = moveData
+		let reach = data.reach
 		var bottom: Int32 = 205
 		var top: Int32 = 430
 		switch data.level {
@@ -152,7 +158,8 @@ extension Fighter {
 		case .low: bottom = 25; top = 145
 		case .overhead: bottom = 180; top = 510
 		}
-		if move == .uppercut || move == .string212 || move == .teleportUppercut { bottom = 90; top = 660 }
+		if move == .uppercut || move == .string212 || move == .teleportUppercut || move == .fanLift { bottom = 90; top = 660 }
+		if move == .smokeTeleport { bottom = 40; top = 360 }
 		return .init(left: x + (facing > 0 ? 40 : -reach), bottom: y + bottom,
 			right: x + (facing > 0 ? reach : -40), top: y + top)
 	}

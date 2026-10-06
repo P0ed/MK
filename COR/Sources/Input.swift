@@ -12,6 +12,7 @@ public struct Input: OptionSet, Equatable, Sendable {
 	public static let three = Input(rawValue: 1 << 6)
 	public static let four = Input(rawValue: 1 << 7)
 	public static let block = Input(rawValue: 1 << 8)
+
 	public static let directions: Input = [.left, .right, .down, .up]
 	public static let attacks: Input = [.one, .two, .three, .four]
 

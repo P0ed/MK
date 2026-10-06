@@ -327,27 +327,32 @@ struct CombatTests {
 	}
 
 	@Test func renderingCadenceDoesNotChangeCombat() {
-		func outcome(hz: Int) -> (Int, Int, Int32, Int32, Int) {
+		func outcome(hz: Int, character: Character) -> (Int, Int, Int32, Int32, Int) {
 			var clock = FrameClock()
-			var fight = duel(.jade, .sektor, distance: 900)
+			var fight = duel(character, .sektor, distance: 900)
 			var ai = AI(seed: 123)
 			for _ in 0 ..< hz * 10 {
 				for _ in 0 ..< clock.advance(1.0 / Double(hz)) {
-					let input: Input = fight.frame % 100 < 25 ? .right : fight.frame % 100 == 26 ? .two : []
+					let period = fight.frame % 240
+					let input: Input = period < 3 ? character.commandOne.input(at: period, facing: fight.fighters[0].facing)
+						: (120 ..< 123).contains(period) ? character.commandTwo.input(at: period - 120, facing: fight.fighters[0].facing)
+						: fight.frame % 100 < 25 ? .right : fight.frame % 100 == 26 ? .two : []
 					let cpu = ai.input(fight)
 					_ = fight.step([.init(held: input), cpu])
 				}
 			}
 			return (fight.fighters[0].health, fight.fighters[1].health, fight.fighters[0].x, fight.fighters[1].x, fight.frame)
 		}
-		let a = outcome(hz: 30)
-		let b = outcome(hz: 60)
-		let c = outcome(hz: 120)
-		#expect(a.0 == b.0 && b.0 == c.0)
-		#expect(a.1 == b.1 && b.1 == c.1)
-		#expect(a.2 == b.2 && b.2 == c.2)
-		#expect(a.3 == b.3 && b.3 == c.3)
-		#expect(a.4 == 600 && b.4 == 600 && c.4 == 600)
+		for character in Character.allCases {
+			let a = outcome(hz: 30, character: character)
+			let b = outcome(hz: 60, character: character)
+			let c = outcome(hz: 120, character: character)
+			#expect(a.0 == b.0 && b.0 == c.0)
+			#expect(a.1 == b.1 && b.1 == c.1)
+			#expect(a.2 == b.2 && b.2 == c.2)
+			#expect(a.3 == b.3 && b.3 == c.3)
+			#expect(a.4 == 600 && b.4 == 600 && c.4 == 600)
+		}
 	}
 
 	@Test func cpuUsesAllCharactersAndFinishesMatches() {

@@ -86,6 +86,7 @@ final class InputController {
 		if state.buttons[GCButtonElementName.a]?.pressedInput.isPressed == true { held.insert(.three) }
 		if state.buttons[GCButtonElementName.b]?.pressedInput.isPressed == true { held.insert(.four) }
 		if state.buttons[GCButtonElementName.rightTrigger]?.pressedInput.isPressed == true { held.insert(.block) }
+		if state.buttons[GCButtonElementName.rightShoulder]?.pressedInput.isPressed == true { held.insert(.block) }
 		let menu = state.buttons[GCButtonElementName.menu]?.pressedInput.isPressed == true
 		let previous = pad.held
 		let wasMenu = pad.menu

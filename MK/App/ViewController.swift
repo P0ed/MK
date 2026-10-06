@@ -24,6 +24,7 @@ final class ViewController: UIViewController {
 	private var solo = true
 	private var selectionCursor = 0
 	private var previewFrame = 0
+	private var resultSettledFrame: Int?
 	private var interruption: NSObjectProtocol?
 	#if DEBUG
 	private let demo = ProcessInfo.processInfo.arguments.contains("--demo")
@@ -48,6 +49,7 @@ final class ViewController: UIViewController {
 		}
 		inputs.topologyChanged = { [weak self] in self?.refreshDevices() }
 		selection.choose = { [weak self] character in self?.choose(character) }
+		selection.showMoves = { [weak self] in self?.showControls() }
 		selection.confirm = { [weak self] in
 			guard let self else { return }
 			handle(.confirm, device: inputs.seats[0] ?? inputs.defaultDevice)
@@ -118,19 +120,22 @@ private extension ViewController {
 				let events = fight.step([first, second])
 				for i in 0 ..< events.count { sounds.play(events[i]); arena.process(events[i], frame: fight.frame) }
 				if fight.phase == .matchEnd {
-					#if DEBUG
-					if demo { startFight(); break }
-					#endif
-					showResult()
-					break
+					if fight.defeatedSettled, resultSettledFrame == nil { resultSettledFrame = fight.phaseFrame }
+					if let resultSettledFrame, fight.phaseFrame >= max(60, resultSettledFrame + 15) {
+						#if DEBUG
+						if demo { startFight(); break }
+						#endif
+						showResult()
+						break
+					}
 				}
 			}
 			arena.draw(fight, fraction: Float(clock.remainder / FrameClock.duration))
 			hud.update(fight)
-		} else if screen == .title || screen == .selection || (screen == .controls && controlsFrom == .title) {
+		} else if screen == .title || screen == .selection || (screen == .controls && (controlsFrom == .title || controlsFrom == .selection)) {
 			previewFrame += clock.advance(delta)
 			// The preview has no combat side effects.
-			arena.draw(fight, previewFrame: previewFrame)
+			arena.draw(fight, fraction: Float(clock.remainder / FrameClock.duration), previewFrame: previewFrame)
 		} else { clock.reset() }
 	}
 
@@ -150,7 +155,7 @@ private extension ViewController {
 		arena.select(choices[0], choices[1])
 		arena.draw(fight)
 		display(.title)
-		menu.show(title: "MORTAL KOMBAT", subtitle: "Four fighters. One arena. First to two.",
+		menu.show(title: "MORTAL KOMBAT", subtitle: "Eight fighters. One arena. First to two.",
 			rows: ["ONE PLAYER", "TWO PLAYERS", "CONTROLS"], footer: deviceHint) { [weak self] index in
 			guard let self else { return }
 			if index == 2 { showControls() }
@@ -188,6 +193,7 @@ private extension ViewController {
 
 	func startFight() {
 		fight = Fight(choices[0], choices[1])
+		resultSettledFrame = nil
 		cpu.reset()
 		inputs.flush()
 		sounds.resume()
@@ -225,6 +231,7 @@ private extension ViewController {
 
 	func closeControls() {
 		if controlsFrom == .paused { pauseMenu(reason: "Game paused") }
+		else if controlsFrom == .selection { display(.selection); refreshSelection() }
 		else { showTitle() }
 	}
 
@@ -281,11 +288,13 @@ private extension ViewController {
 				if ready[cursor] { ready[cursor] = false }
 				else if solo, cursor == 1 { selectionCursor = 0; ready[0] = false }
 				else { showTitle(); return }
-			} else if command == .left || command == .right {
+			} else if command == .left || command == .right || command == .up || command == .down {
 				guard !ready[cursor] else { return }
 				selectionCursor = cursor
-				let offset = command == .left ? 3 : 1
-				choices[cursor] = Character(rawValue: UInt8((Int(choices[cursor].rawValue) + offset) % 4))!
+				let roster = Character.allCases
+				let offset = command == .left ? -1 : command == .right ? 1 : command == .up ? -4 : 4
+				let index = (Int(choices[cursor].rawValue) + offset + roster.count) % roster.count
+				choices[cursor] = roster[index]
 				sounds.play(.menu)
 			} else if command == .confirm {
 				guard inputs.available(device) else { return }

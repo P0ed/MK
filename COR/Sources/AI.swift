@@ -31,7 +31,7 @@ public struct AI {
 		let opponent = fight.fighters[1 - player]
 		let seen = observations[cursor]
 		observations[cursor] = .init(distance: abs(fighter.x - opponent.x), attacking: opponent.move != .none,
-			level: opponent.move.data.level, projectile: fight.projectiles[1 - player].active)
+			level: opponent.moveData.level, projectile: fight.projectiles[1 - player].active)
 		cursor = (cursor + 1) % observations.count
 		if fighter.stun > 0 { length = 0; position = 0; return .init(held: .block) }
 		if position < length {
@@ -46,7 +46,12 @@ public struct AI {
 		random ^= random << 17
 		let roll = Int(random % 100)
 		let forward: Input = fighter.facing > 0 ? .right : .left
-		let back: Input = fighter.facing > 0 ? .left : .right
+		func rangedCommand() -> SpecialCommand {
+			if fighter.character == .cyrax, roll < 20 { return fighter.character.commandTwo }
+			if fighter.character == .liuKang, roll < 18 { return fighter.character.commandTwo }
+			if fighter.character == .smoke, roll < 15 { return fighter.character.commandTwo }
+			return fighter.character.commandOne
+		}
 		sequence = .init(repeating: [])
 		position = 1
 		length = 0
@@ -55,10 +60,8 @@ public struct AI {
 			let guardInput: Input = seen.level == .low ? [.block, .down] : .block
 			for i in 0 ..< length { sequence[i] = guardInput }
 		} else if seen.distance > 580, roll < 40, !fight.projectiles[player].active {
-			let first: Input = fighter.character == .scorpion || fighter.character == .sektor ? back : .down
-			sequence[0] = first
-			sequence[1] = forward
-			sequence[2] = [forward, .one]
+			let command = rangedCommand()
+			for i in 0 ..< 3 { sequence[i] = command.input(at: i, facing: fighter.facing) }
 			length = 4
 			wait = 32
 		} else if seen.distance > 245 {
@@ -71,9 +74,8 @@ public struct AI {
 				for i in 0 ..< length { sequence[i] = forward }
 			}
 		} else if roll < 12 {
-			sequence[0] = fighter.character == .scorpion || fighter.character == .sektor ? .down : back
-			sequence[1] = fighter.character == .scorpion ? back : forward
-			sequence[2] = [sequence[1], fighter.character == .scorpion ? .three : .four]
+			let command = fighter.character == .cyrax ? fighter.character.commandOne : fighter.character.commandTwo
+			for i in 0 ..< 3 { sequence[i] = command.input(at: i, facing: fighter.facing) }
 			length = 4
 			wait = 34
 		} else if roll < 23 {

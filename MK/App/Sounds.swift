@@ -4,9 +4,13 @@ import COR
 
 enum Sound: Int, CaseIterable {
 	case menu, swing, punch, kick, block, spear, ice, rang, rocket, explode, teleport, round
+	case net, bomb, fan, smoke, fire
 }
 
-private let soundNames: InlineArray<12, String> = ["menu", "swing", "punch", "kick", "block", "spear", "ice", "rang", "rocket", "explode", "teleport", "round"]
+private let soundNames: InlineArray<17, String> = [
+	"menu", "swing", "punch", "kick", "block", "spear", "ice", "rang", "rocket", "explode", "teleport", "round",
+	"net", "bomb", "fan", "smoke", "fire"
+]
 
 @MainActor
 final class Sounds {
@@ -17,7 +21,7 @@ final class Sounds {
 
 	private let engine = AVAudioEngine()
 	private let voices: InlineArray<8, Voice>
-	private var buffers: InlineArray<12, AVAudioPCMBuffer?> = .init(repeating: nil)
+	private var buffers: InlineArray<17, AVAudioPCMBuffer?> = .init(repeating: nil)
 
 	init() {
 		try? AVAudioSession.sharedInstance().setCategory(.ambient)
@@ -64,7 +68,15 @@ final class Sounds {
 		switch event.kind {
 		case .attack: play(.swing)
 		case .block: play(.block)
-		case .hit: play(event.move == .rocket ? .explode : event.move.isKick ? .kick : .punch)
+		case .hit:
+			switch event.move {
+			case .rocket: play(.explode)
+			case .net: play(.net)
+			case .fan, .fanLift: play(.fan)
+			case .smokeCloud, .smokeTeleport: play(.smoke)
+			case .fireball: play(.fire)
+			default: play(event.move.isKick ? .kick : .punch)
+			}
 		case .special:
 			switch event.move {
 			case .spear: play(.spear)
@@ -72,8 +84,14 @@ final class Sounds {
 			case .rang: play(.rang)
 			case .rocket: play(.rocket)
 			case .teleport, .teleportUppercut: play(.teleport)
+			case .net: play(.net)
+			case .bomb: play(.bomb)
+			case .fan, .fanLift: play(.fan)
+			case .smokeCloud, .smokeTeleport: play(.smoke)
+			case .fireball: play(.fire)
 			default: play(.kick)
 			}
+		case .detonate: play(.explode)
 		case .roundStart, .knockout: play(.round)
 		default: break
 		}

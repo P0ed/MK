@@ -10,6 +10,10 @@ enum Colors {
 	static let subZero = UIColor(red: 0.15, green: 0.62, blue: 0.96, alpha: 1)
 	static let jade = UIColor(red: 0.25, green: 0.82, blue: 0.45, alpha: 1)
 	static let sektor = UIColor(red: 0.91, green: 0.16, blue: 0.19, alpha: 1)
+	static let cyrax = UIColor(red: 0.95, green: 0.82, blue: 0.16, alpha: 1)
+	static let kitana = UIColor(red: 0.25, green: 0.36, blue: 0.95, alpha: 1)
+	static let smoke = UIColor(red: 0.66, green: 0.70, blue: 0.76, alpha: 1)
+	static let liuKang = UIColor(red: 0.95, green: 0.32, blue: 0.16, alpha: 1)
 }
 
 extension Character {
@@ -19,6 +23,10 @@ extension Character {
 		case .subZero: Colors.subZero
 		case .jade: Colors.jade
 		case .sektor: Colors.sektor
+		case .cyrax: Colors.cyrax
+		case .kitana: Colors.kitana
+		case .smoke: Colors.smoke
+		case .liuKang: Colors.liuKang
 		}
 	}
 }

@@ -119,6 +119,7 @@ final class HUD: UIView {
 		switch fight.phase {
 		case .intro: text = fight.phaseFrame < 40 ? "ROUND \(fight.round)" : "FIGHT"
 		case .roundEnd: text = fight.winner.map { "PLAYER \($0 + 1) WINS" } ?? "DOUBLE KO"
+		case .matchEnd: text = fight.phaseFrame < 30 ? "K.O." : fight.winner.map { "\(fight.fighters[$0].character.name) WINS" } ?? "DOUBLE KO"
 		default: text = ""
 		}
 		banner.isHidden = text.isEmpty
@@ -211,43 +212,52 @@ final class SelectionView: UIView {
 	private let devices: InlineArray<2, UILabel> = .init { _ in label(11, color: Colors.muted) }
 	private var cards: [MenuButton] = []
 	private let ready: MenuButton
+	private let moveGuide: MenuButton
 	var choose: (Character) -> Void = { _ in }
 	var confirm: () -> Void = {}
+	var showMoves: () -> Void = {}
 
 	override init(frame: CGRect) {
 		ready = MenuButton("READY", action: {})
+		moveGuide = MenuButton("MOVES", action: {})
 		super.init(frame: frame)
 		title.text = "CHOOSE YOUR FIGHTER"
 		title.textAlignment = .center
 		hint.textAlignment = .center
 		addSubview(title); addSubview(hint)
-		for i in 0 ..< 2 { addSubview(names[i]); addSubview(devices[i]); devices[i].numberOfLines = 2 }
+		for i in 0 ..< 2 { addSubview(names[i]); addSubview(devices[i]); devices[i].numberOfLines = 3 }
 		names[1].textAlignment = .right; devices[1].textAlignment = .right
 		for character in Character.allCases {
 			let card = MenuButton(character.name) { [weak self] in self?.choose(character) }
 			card.titleLabel?.font = .systemFont(ofSize: 12, weight: .bold)
+			card.titleLabel?.numberOfLines = 2
+			card.titleLabel?.textAlignment = .center
 			cards.append(card)
 			addSubview(card)
 		}
 		ready.addAction(UIAction { [weak self] _ in self?.confirm() }, for: .touchUpInside)
+		moveGuide.addAction(UIAction { [weak self] _ in self?.showMoves() }, for: .touchUpInside)
 		addSubview(ready)
+		addSubview(moveGuide)
 	}
 
 	required init?(coder: NSCoder) { fatalError() }
 
 	func update(_ choices: borrowing InlineArray<2, Character>, ready: borrowing InlineArray<2, Bool>, inputs: InputController, solo: Bool, cursor: Int) {
-		hint.text = solo ? (cursor == 0 ? "Choose your fighter · A / Enter to ready" : "Choose your opponent · A / Enter to fight") : "Each player chooses with their own D-pad · A / Enter to ready"
+		hint.text = solo ? (cursor == 0 ? "Stronger fighters ease the challenge · A / Enter to ready" : "Stronger opponents raise the challenge · A / Enter to fight") : "Each player chooses with their own D-pad · A / Enter to ready"
 		for i in 0 ..< 2 {
 			names[i].text = "\(solo && i == 1 ? "CPU" : "PLAYER \(i + 1)")  ·  \(choices[i].name)\(ready[i] ? "  ✓" : "")"
 			names[i].textColor = choices[i].color
-			devices[i].text = solo && i == 1 ? "Local opponent" : inputs.name(for: i)
+			let device = solo && i == 1 ? "Local opponent" : inputs.name(for: i)
+			devices[i].text = "\(device)\n\(choices[i].strength) · \(choices[i].playstyle)"
 		}
 		for (index, card) in cards.enumerated() {
 			let character = Character(rawValue: UInt8(index))!
 			var suffix = ""
 			if choices[0] == character { suffix += " · P1" }
 			if choices[1] == character { suffix += solo ? " · CPU" : " · P2" }
-			card.setTitle(character.name + suffix, for: .normal)
+			card.setTitle(character.name + suffix + "\n" + character.strength, for: .normal)
+			card.accessibilityLabel = character.name + suffix + ", " + character.strength + ", " + character.playstyle
 			card.focus(choices[cursor] == character)
 			card.layer.borderColor = (choices[cursor] == character ? character.color : Colors.muted.withAlphaComponent(0.3)).cgColor
 		}
@@ -256,17 +266,29 @@ final class SelectionView: UIView {
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		let w = bounds.width, h = bounds.height, margin: CGFloat = 20
-		title.frame = CGRect(x: margin, y: 12, width: w - margin * 2, height: 35)
-		hint.frame = CGRect(x: margin, y: 50, width: w - margin * 2, height: 22)
+		let compact = h < 330
+		title.font = .systemFont(ofSize: compact ? 23 : 27, weight: .heavy)
+		title.frame = CGRect(x: margin, y: compact ? 5 : 12, width: w - margin * 2, height: compact ? 28 : 35)
+		hint.frame = CGRect(x: margin, y: compact ? 35 : 50, width: w - margin * 2, height: compact ? 18 : 22)
 		for i in 0 ..< 2 {
 			let width = w * 0.44
 			let x = i == 0 ? margin : w - margin - width
-			names[i].frame = CGRect(x: x, y: 81, width: width, height: 25)
-			devices[i].frame = CGRect(x: x, y: 108, width: width, height: 32)
+			names[i].font = .systemFont(ofSize: compact ? 14 : 17, weight: .bold)
+			devices[i].font = .systemFont(ofSize: compact ? 9 : 11)
+			names[i].frame = CGRect(x: x, y: compact ? 56 : 81, width: width, height: compact ? 20 : 25)
+			devices[i].frame = CGRect(x: x, y: compact ? 76 : 106, width: width, height: compact ? 31 : 45)
 		}
-		let gap: CGFloat = 8, width = (w - margin * 2 - gap * 3) / 4
-		for (i, card) in cards.enumerated() { card.frame = CGRect(x: margin + CGFloat(i) * (width + gap), y: h - 104, width: width, height: 43) }
-		ready.frame = CGRect(x: w / 2 - 75, y: h - 49, width: 150, height: 34)
+		let gap: CGFloat = compact ? 6 : 8, width = (w - margin * 2 - gap * 3) / 4
+		let rows = (cards.count + 3) / 4
+		let rowHeight = min(43, max(28, h * 0.09))
+		let gridHeight = CGFloat(rows) * rowHeight + CGFloat(rows - 1) * gap
+		let top = h - (compact ? 55 : 61) - gridHeight
+		for (i, card) in cards.enumerated() {
+			card.titleLabel?.font = .systemFont(ofSize: compact ? 10 : 12, weight: .bold)
+			card.frame = CGRect(x: margin + CGFloat(i % 4) * (width + gap), y: top + CGFloat(i / 4) * (rowHeight + gap), width: width, height: rowHeight)
+		}
+		moveGuide.frame = CGRect(x: w / 2 - 142, y: h - 49, width: 134, height: 34)
+		ready.frame = CGRect(x: w / 2 + 8, y: h - 49, width: 134, height: 34)
 	}
 }
 

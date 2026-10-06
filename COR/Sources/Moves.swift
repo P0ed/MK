@@ -1,45 +1,5 @@
-public enum Character: UInt8, CaseIterable, Sendable {
-	case scorpion, subZero, jade, sektor
-
-	public var name: String {
-		switch self {
-		case .scorpion: "SCORPION"
-		case .subZero: "SUB-ZERO"
-		case .jade: "JADE"
-		case .sektor: "SEKTOR"
-		}
-	}
-
-	public var specialOne: MoveID {
-		switch self {
-		case .scorpion: .spear
-		case .subZero: .ice
-		case .jade: .rang
-		case .sektor: .rocket
-		}
-	}
-
-	public var specialTwo: MoveID {
-		switch self {
-		case .scorpion: .teleport
-		case .subZero: .slide
-		case .jade: .shadowKick
-		case .sektor: .teleportUppercut
-		}
-	}
-
-	public var moves: String {
-		switch self {
-		case .scorpion: "Spear  B, F + 1\nTeleport  D, B + 3"
-		case .subZero: "Ice  D, F + 1\nSlide  B, F + 4"
-		case .jade: "Razor-rang  D, F + 1\nShadow kick  B, F + 4"
-		case .sektor: "Rocket  B, F + 1\nTeleport uppercut  D, F + 4"
-		}
-	}
-}
-
 public enum HitLevel: Sendable { case high, mid, low, overhead }
-public enum HitEffect: Sendable { case strike, knockdown, launch, pull, freeze }
+public enum HitEffect: Sendable { case strike, knockdown, launch, pull, freeze, bind }
 
 public struct MoveData: Sendable {
 	public var startup: Int
@@ -64,14 +24,20 @@ public enum MoveID: UInt8, CaseIterable, Sendable {
 	case air1, air2, air3, air4
 	case string11, string112, string21, string212, string34
 	case spear, teleport, ice, slide, rang, shadowKick, rocket, teleportUppercut
+	case net, bomb, fan, fanLift, smokeCloud, smokeTeleport, fireball, flyingKick
 
 	public var data: MoveData { moveTable[Int(rawValue)] }
 	public var isSpecial: Bool { rawValue >= MoveID.spear.rawValue }
-	public var isProjectile: Bool { self == .spear || self == .ice || self == .rang || self == .rocket }
-	public var isTeleport: Bool { self == .teleport || self == .teleportUppercut }
+	public var isProjectile: Bool {
+		switch self {
+		case .spear, .ice, .rang, .rocket, .net, .bomb, .fan, .smokeCloud, .fireball: true
+		default: false
+		}
+	}
+	public var isTeleport: Bool { self == .teleport || self == .teleportUppercut || self == .smokeTeleport }
 	public var isKick: Bool {
 		switch self {
-		case .kick1, .kick2, .lowKick, .sweep, .air3, .air4, .string34, .slide, .shadowKick: true
+		case .kick1, .kick2, .lowKick, .sweep, .air3, .air4, .string34, .slide, .shadowKick, .flyingKick: true
 		default: false
 		}
 	}
@@ -89,7 +55,7 @@ public enum MoveID: UInt8, CaseIterable, Sendable {
 }
 
 /// All timings are simulation frames. An attack begins at elapsed frame zero.
-private let moveTable: InlineArray<26, MoveData> = [
+private let moveTable: InlineArray<34, MoveData> = [
 	.init(startup: 0, active: 0, recovery: 0, damage: 0, reach: 0, level: .mid),
 	.init(startup: 6, active: 2, recovery: 12, damage: 50, reach: 210, level: .high),
 	.init(startup: 9, active: 3, recovery: 16, damage: 70, reach: 235, level: .mid),
@@ -116,17 +82,20 @@ private let moveTable: InlineArray<26, MoveData> = [
 	.init(startup: 11, active: 8, recovery: 23, damage: 90, reach: 280, level: .mid, effect: .knockdown),
 	.init(startup: 17, active: 1, recovery: 24, damage: 90, reach: 0, level: .high, hitstun: 20),
 	.init(startup: 17, active: 3, recovery: 26, damage: 100, reach: 250, level: .mid, effect: .launch, hitstun: 26),
+	.init(startup: 19, active: 1, recovery: 26, damage: 35, reach: 0, level: .high, effect: .bind, hitstun: 52),
+	.init(startup: 18, active: 1, recovery: 24, damage: 125, reach: 0, level: .low, effect: .launch, hitstun: 28),
+	.init(startup: 11, active: 1, recovery: 17, damage: 48, reach: 0, level: .high, hitstun: 18),
+	.init(startup: 12, active: 5, recovery: 28, damage: 40, reach: 340, level: .mid, effect: .launch, hitstun: 30),
+	.init(startup: 21, active: 1, recovery: 30, damage: 60, reach: 0, level: .mid, effect: .launch, hitstun: 28),
+	.init(startup: 16, active: 4, recovery: 30, damage: 80, reach: 250, level: .overhead, hitstun: 20),
+	.init(startup: 12, active: 1, recovery: 20, damage: 70, reach: 0, level: .mid, hitstun: 18),
+	.init(startup: 7, active: 12, recovery: 25, damage: 110, reach: 300, level: .high, effect: .knockdown),
 ]
 
 func special(character: Character, button: Int, history: borrowing CommandHistory, frame: Int) -> MoveID? {
-	if button == 0 {
-		let first: Input = character == .scorpion || character == .sektor ? .left : .down
-		if history.matches(first, .right, frame: frame) { return character.specialOne }
-	}
-	if character == .scorpion, button == 2, history.matches(.down, .left, frame: frame) { return .teleport }
-	if button == 3 {
-		let first: Input = character == .sektor ? .down : .left
-		if character != .scorpion, history.matches(first, .right, frame: frame) { return character.specialTwo }
-	}
+	let first = character.commandOne
+	if button == first.button, history.matches(first.first, first.second, frame: frame) { return first.move }
+	let second = character.commandTwo
+	if button == second.button, history.matches(second.first, second.second, frame: frame) { return second.move }
 	return nil
 }
