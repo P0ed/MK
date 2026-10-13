@@ -254,7 +254,54 @@ final class FighterRig {
 		if move != .none {
 			let strike: Float = elapsed <= Float(data.startup) ? smooth(elapsed / Float(max(1, data.startup)))
 				: 1 - smooth((elapsed - Float(data.startup + data.active)) / Float(max(1, data.recovery)))
-			if move == .flyingKick {
+			staffAngle = -strike * 1.5
+			if move == .takedown {
+				bodyY -= strike * 0.32; bodyTilt = -0.18 * strike
+				legA = 0.35 + strike * 1.65; kneeA = 0
+				legB = -0.6; kneeB = -1.25
+				armA = 1.0; armB = -0.25; elbowA = 1.3; elbowB = 0.5
+			} else if move == .iceBurst {
+				armA = 0.6 + strike * 1.15; armB = 0.6 + strike * 1.15
+				elbowA = 0.15; elbowB = 0.15
+				legA = 0.55; legB = -0.4; bodyTilt = -0.08 * strike
+			} else if move == .staffSpin {
+				armA = 1.65; armB = 0.65; elbowA = 0.15; elbowB = 1.1
+				staffAngle = -elapsed * 0.7 * strike
+				legA = 0.45; legB = -0.45
+			} else if move == .flameBurner {
+				armA = 0.7 + strike * 0.9; elbowA = 0
+				armB = 0.8; elbowB = 1.2
+				legA = 0.5; legB = -0.45; bodyTilt = -0.1 * strike
+			} else if move == .buzzsaw {
+				armA = 0.45 + strike * 1.15; elbowA = 0.05
+				armB = 1.1; elbowB = 1.35
+				legA = 0.35; legB = -0.4; bodyTilt = -0.08 * strike
+			} else if move == .squareWave {
+				bodyY += strike * 0.22; bodyTilt = -0.3 * strike
+				legA = 0.7 + strike; kneeA = 0
+				legB = -0.4; kneeB = -1.35
+				armA = 1.65; armB = 1.7; elbowA = 0.1; elbowB = 0.25
+				fanAngle = -.pi + strike * 0.65
+			} else if move == .smokeStrike {
+				armA = 0.5; elbowA = 1.25
+				armB = 0.55 + strike * 1.3; elbowB = 0.1
+				legA = 0.5; legB = -0.35; bodyTilt = -0.14 * strike
+			} else if move == .bicycleKick {
+				let cycle = sin(max(0, elapsed - Float(data.startup)) * 0.85)
+				bodyY += strike * 0.14; bodyTilt = -0.26 * strike
+				legA = 0.6 + strike * (0.7 + cycle * 0.5)
+				legB = 0.6 + strike * (0.7 - cycle * 0.5)
+				kneeA = -max(0, -cycle) * 1.25; kneeB = -max(0, cycle) * 1.25
+				armA = 0.5; armB = 1.1; elbowA = 1.6; elbowB = 1.35
+			} else if uniqueStringPose(move, strike: strike, armA: &armA, armB: &armB,
+				elbowA: &elbowA, elbowB: &elbowB, legA: &legA, legB: &legB,
+				kneeA: &kneeA, kneeB: &kneeB, bodyY: &bodyY, bodyTilt: &bodyTilt,
+				staffAngle: &staffAngle, fanAngle: &fanAngle) {
+				// Each string keeps its character's weapon and attack silhouette.
+			} else if move == .backPunch {
+				armB = 0.45 + strike * 2.3; elbowB = 0.65 * (1 - strike)
+				bodyY += strike * 0.06; bodyTilt = -0.12 * strike
+			} else if move == .flyingKick {
 				legA = 0.5 + strike * 1.1; kneeA = 0
 				legB = -0.65; kneeB = -1.4
 				armA = -0.2; armB = 1.15; elbowA = 1.6; elbowB = 1.5
@@ -298,7 +345,6 @@ final class FighterRig {
 				if far { armB = 0.55 + strike; elbowB = 0.9 * (1 - strike) }
 				else { armA = 0.38 + strike * 1.17; elbowA = 1.1 * (1 - strike) }
 			}
-			staffAngle = -strike * 1.5
 		}
 		if pose == .hit {
 			bodyTilt = airborne ? -0.38 : -0.17
@@ -333,7 +379,7 @@ final class FighterRig {
 		let effectBlend = initialized ? 1 - exp(-delta * 0.75) : 1
 		bodyOpacity += (visible - bodyOpacity) * effectBlend
 		setOpacity(body, bodyOpacity)
-		frostOpacity += ((pose == .frozen && caughtBy == .ice ? 1 : 0) - frostOpacity) * effectBlend
+		frostOpacity += ((pose == .frozen && (caughtBy == .ice || caughtBy == .iceBurst) ? 1 : 0) - frostOpacity) * effectBlend
 		netOpacity += ((pose == .frozen && caughtBy == .net ? 1 : 0) - netOpacity) * effectBlend
 		setOpacity(frost, frostOpacity)
 		setOpacity(snare, netOpacity)
@@ -348,7 +394,7 @@ final class FighterRig {
 			let swell: Float = smokeTeleport ? 1.85 : 0.65 + sin(phase) * 0.16
 			smokeWisps[i].scale = [0.38 * swell, 0.47 * swell, 0.38 * swell]
 		}
-		let windTarget: Float = move == .fanLift ? smooth((elapsed - Float(data.startup) + 4) / 4) * (1 - smooth((elapsed - Float(data.startup + data.active)) / 8)) : 0
+		let windTarget: Float = move == .fanLift || move == .squareWave ? smooth((elapsed - Float(data.startup) + 4) / 4) * (1 - smooth((elapsed - Float(data.startup + data.active)) / 8)) : 0
 		windOpacity += (windTarget - windOpacity) * effectBlend
 		setOpacity(fanWind, windOpacity)
 		fanWind.orientation = simd_quatf(angle: time * 0.22, axis: [0, 0, 1])
@@ -364,6 +410,59 @@ final class FighterRig {
 		effects?.update(owner: root, sample: sample, move: move, elapsed: elapsed, data: data, pose: pose, caughtBy: caughtBy,
 			landingAge: time - landedAt, teleportOrigin: teleportOrigin, alive: health > 0)
 		lastTime = time; lastMove = move; lastCaughtBy = caughtBy; lastAirborne = airborne
+	}
+
+	private func uniqueStringPose(_ move: MoveID, strike: Float,
+		armA: inout Float, armB: inout Float, elbowA: inout Float, elbowB: inout Float,
+		legA: inout Float, legB: inout Float, kneeA: inout Float, kneeB: inout Float,
+		bodyY: inout Float, bodyTilt: inout Float, staffAngle: inout Float, fanAngle: inout Float) -> Bool {
+		switch move {
+		case .scorpionStringStart:
+			armB = 0.5 + strike * 1.3; elbowB = 0.2
+			legA = 0.5; legB = -0.35; bodyTilt = -strike * 0.1
+		case .smokeStringStart:
+			legA = 0.35 + strike * 1.4; kneeA = -0.85
+			armA = 1.0; armB = 0.85; elbowA = 1.1; elbowB = 1.25
+			bodyTilt = -strike * 0.12
+		case .subZeroStringStart:
+			armA = 0.5 + strike * 1.2; elbowA = 0.2
+			armB = 1.15; elbowB = 1.1; bodyY -= strike * 0.1
+		case .jadeStringStart, .sektorStringStart:
+			legB = 0.25 + strike * 1.6; kneeB = -0.15 * (1 - strike)
+			armA = 1.1; elbowA = 0.5; bodyTilt = -strike * 0.18
+			staffAngle = -0.6
+		case .cyraxStringStart:
+			armB = 0.6 + strike * 1.6; elbowB = 0.9
+			bodyY -= strike * 0.06; legA = 0.45; legB = -0.3
+		case .kitanaStringStart:
+			armB = 0.75 + strike * 1.3; elbowB = 0.15
+			armA = 1.15; elbowA = 0.75; fanAngle = -.pi + strike
+		case .liuKangStringStart:
+			legA = 0.3 + strike * 1.25; kneeA = -0.8
+			armA = 0.7; armB = 1.0; elbowA = 1.3; elbowB = 1.2
+		case .scorpionStringEnd, .smokeStringEnd:
+			armB = 0.5 + strike * 2.35; elbowB = 0.6 * (1 - strike)
+			bodyY += strike * 0.08; bodyTilt = -strike * 0.12
+		case .subZeroStringEnd:
+			armA = 0.4 + strike * 2.45; elbowA = 0.75 * (1 - strike)
+			armB = 1.1; elbowB = 1.0; bodyY += strike * 0.08
+		case .jadeStringEnd:
+			legA = 0.25 + strike * 2.05; kneeA = 0
+			armA = 1.65; elbowA = 0.2; staffAngle = -0.6 - strike
+			bodyTilt = -strike * 0.23
+		case .sektorStringEnd:
+			legB = 0.4 + strike * 1.65; kneeB = -0.75
+			armA = 1.1; armB = 1.0; bodyY += strike * 0.06
+		case .cyraxStringEnd, .liuKangStringEnd:
+			legB = 0.3 + strike * 2.1; kneeB = 0
+			legA = -0.3; kneeA = -0.25; bodyTilt = -strike * 0.22
+		case .kitanaStringEnd:
+			armA = 0.6 + strike * 2.25; elbowA = 0.1
+			armB = 1.0; elbowB = 0.5; fanAngle = -.pi + strike * 1.4
+			bodyY += strike * 0.08
+		default: return false
+		}
+		return true
 	}
 
 	private func setOpacity(_ entity: Entity, _ opacity: Float) {

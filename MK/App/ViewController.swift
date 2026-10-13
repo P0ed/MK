@@ -22,6 +22,7 @@ final class ViewController: UIViewController {
 	private var choices: InlineArray<2, Character> = [.scorpion, .sektor]
 	private var ready: InlineArray<2, Bool> = .init(repeating: false)
 	private var solo = true
+	private var practice = false
 	private var selectionCursor = 0
 	private var previewFrame = 0
 	private var resultSettledFrame: Int?
@@ -114,9 +115,9 @@ private extension ViewController {
 				let deadline = now - clock.remainder - Double(steps - index - 1) * FrameClock.duration
 				var first = inputs.frame(for: 0, until: deadline)
 				#if DEBUG
-				if demo { first = demoCPU.input(fight, player: 0) }
+				if demo && !practice { first = demoCPU.input(fight, player: 0) }
 				#endif
-				let second = solo ? cpu.input(fight) : inputs.frame(for: 1, until: deadline)
+				let second = practice ? InputFrame() : solo ? cpu.input(fight) : inputs.frame(for: 1, until: deadline)
 				let events = fight.step([first, second])
 				for i in 0 ..< events.count { sounds.play(events[i]); arena.process(events[i], frame: fight.frame) }
 				if fight.phase == .matchEnd {
@@ -150,16 +151,17 @@ private extension ViewController {
 
 	func showTitle() {
 		inputs.releaseSeats()
+		practice = false
 		choices = [.scorpion, .sektor]
 		fight = Fight(choices[0], choices[1])
 		arena.select(choices[0], choices[1])
 		arena.draw(fight)
 		display(.title)
 		menu.show(title: "MORTAL KOMBAT", subtitle: "Eight fighters. One arena. First to two.",
-			rows: ["ONE PLAYER", "TWO PLAYERS", "CONTROLS"], footer: deviceHint) { [weak self] index in
+			rows: ["ONE PLAYER", "TWO PLAYERS", "PRACTICE", "CONTROLS"], footer: deviceHint) { [weak self] index in
 			guard let self else { return }
-			if index == 2 { showControls() }
-			else { beginSelection(solo: index == 0, device: inputs.defaultDevice) }
+			if index == 3 { showControls() }
+			else { beginSelection(solo: index != 1, practice: index == 2, device: inputs.defaultDevice) }
 		}
 	}
 
@@ -167,8 +169,9 @@ private extension ViewController {
 		inputs.hasDevices ? "D-pad / arrows to choose · A / Enter to confirm" : "Connect a controller or hardware keyboard to play"
 	}
 
-	func beginSelection(solo: Bool, device: Device) {
+	func beginSelection(solo: Bool, practice: Bool = false, device: Device) {
 		self.solo = solo
+		self.practice = practice
 		ready = .init(repeating: false)
 		selectionCursor = 0
 		inputs.releaseSeats()
@@ -181,7 +184,7 @@ private extension ViewController {
 		fight = Fight(choices[0], choices[1])
 		arena.select(choices[0], choices[1])
 		arena.draw(fight)
-		selection.update(choices, ready: ready, inputs: inputs, solo: solo, cursor: selectionCursor)
+		selection.update(choices, ready: ready, inputs: inputs, solo: solo, cursor: selectionCursor, practice: practice)
 	}
 
 	func choose(_ character: Character) {
@@ -192,13 +195,13 @@ private extension ViewController {
 	}
 
 	func startFight() {
-		fight = Fight(choices[0], choices[1])
+		fight = Fight(choices[0], choices[1], practice: practice)
 		resultSettledFrame = nil
 		cpu.reset()
 		inputs.flush()
 		sounds.resume()
 		arena.select(choices[0], choices[1])
-		hud.configure(choices[0], choices[1])
+		hud.configure(choices[0], choices[1], practice: practice)
 		hud.update(fight)
 		display(.fighting)
 	}
@@ -237,10 +240,19 @@ private extension ViewController {
 
 	func pauseMenu(reason: String) {
 		display(.paused)
-		menu.show(title: "PAUSED", subtitle: reason, rows: ["RESUME", "CONTROLS & MOVES", "CHARACTER SELECT", "MAIN MENU"],
+		let rows = practice ? ["RESUME", "RESET PRACTICE", "CONTROLS & MOVES", "CHARACTER SELECT", "MAIN MENU"] : ["RESUME", "CONTROLS & MOVES", "CHARACTER SELECT", "MAIN MENU"]
+		menu.show(title: practice ? "PRACTICE PAUSED" : "PAUSED", subtitle: reason, rows: rows,
 			footer: "A / Enter to confirm · B / Escape to resume") { [weak self] index in
 			guard let self else { return }
-			switch index {
+			if practice, index == 1 {
+				fight.resetPractice()
+				arena.select(choices[0], choices[1])
+				arena.draw(fight)
+				hud.update(fight)
+				resume()
+				return
+			}
+			switch practice && index > 1 ? index - 1 : index {
 			case 0: resume()
 			case 1: showControls()
 			case 2: returnToSelection()
@@ -264,7 +276,7 @@ private extension ViewController {
 	}
 
 	func refreshDevices() {
-		if screen == .selection { selection.update(choices, ready: ready, inputs: inputs, solo: solo, cursor: selectionCursor) }
+		if screen == .selection { selection.update(choices, ready: ready, inputs: inputs, solo: solo, cursor: selectionCursor, practice: practice) }
 		else if screen == .title { showTitle() }
 	}
 
@@ -274,6 +286,7 @@ private extension ViewController {
 			if command == .pause { pause(reason: "Game paused") }
 		case .controls:
 			if command == .back || command == .pause || command == .confirm { closeControls() }
+			else if command == .up || command == .down { controls.scroll(command == .down ? 1 : -1) }
 		case .selection:
 			if command == .pause { showTitle(); return }
 			if !solo, inputs.seat(for: device) == nil, inputs.seats[1] == nil, command == .confirm {
@@ -307,7 +320,7 @@ private extension ViewController {
 			if command == .up || command == .left { menu.focus(menu.selection - 1); sounds.play(.menu) }
 			else if command == .down || command == .right { menu.focus(menu.selection + 1); sounds.play(.menu) }
 			else if command == .confirm {
-				if screen == .title, menu.selection < 2 { beginSelection(solo: menu.selection == 0, device: device) }
+				if screen == .title, menu.selection < 3 { beginSelection(solo: menu.selection != 1, practice: menu.selection == 2, device: device) }
 				else { menu.confirm() }
 			} else if command == .back || command == .pause, screen == .paused { resume() }
 		}

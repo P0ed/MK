@@ -56,7 +56,7 @@ struct RosterTests {
 		#expect(fight.fighters[1].pose == .frozen)
 		#expect(fight.fighters[1].x == targetX)
 		#expect(fight.fighters[1].vx == 0 && fight.fighters[1].vy == 0)
-		#expect(fight.fighters[1].stun == 52)
+		#expect(fight.fighters[1].stun == 104)
 		var victim = fight.fighters[1]
 		victim.caughtBy = .none
 		let repeatedNet = Projectile(active: true, move: .net, x: victim.x, y: 385, oldX: victim.x)

@@ -30,6 +30,30 @@ public struct SpecialCommand: Sendable {
 	}
 }
 
+/// A directional starter followed by one attack, with no motion required.
+public struct StringCommand: Sendable {
+	public let name: String
+	public let direction: Input
+	public let firstButton: Int
+	public let secondButton: Int
+	public let starter: MoveID
+	public let finisher: MoveID
+
+	public var hint: String {
+		"\(name)  \(direction == .left ? "B" : "F") + \(firstButton + 1), \(secondButton + 1)"
+	}
+
+	public func input(at step: Int, facing: Int32) -> Input {
+		let absolute = facing < 0 ? (direction == .left ? Input.right : .left) : direction
+		switch step {
+		case 0: return [absolute, .attack(firstButton)]
+		case 1: return absolute
+		case 2: return [absolute, .attack(secondButton)]
+		default: return []
+		}
+	}
+}
+
 public enum Character: UInt8, CaseIterable, Sendable {
 	case scorpion, subZero, jade, sektor, cyrax, kitana, smoke, liuKang
 
@@ -74,7 +98,34 @@ public enum Character: UInt8, CaseIterable, Sendable {
 
 	public var specialOne: MoveID { commandOne.move }
 	public var specialTwo: MoveID { commandTwo.move }
-	public var moves: String { "\(commandOne.hint)\n\(commandTwo.hint)" }
+	public var specialThree: MoveID { commandThree.move }
+	public var moves: String { "\(commandOne.hint)\n\(commandTwo.hint)\n\(commandThree.hint)" }
+
+	public var commandThree: SpecialCommand {
+		switch self {
+		case .scorpion: .init(move: .takedown, first: .down, second: .left, button: 3, name: "Takedown")
+		case .subZero: .init(move: .iceBurst, first: .down, second: .left, button: 1, name: "Ice burst")
+		case .jade: .init(move: .staffSpin, first: .down, second: .left, button: 1, name: "Staff spin")
+		case .sektor: .init(move: .flameBurner, first: .down, second: .left, button: 1, name: "Flame burner")
+		case .cyrax: .init(move: .buzzsaw, first: .down, second: .right, button: 1, name: "Buzzsaw")
+		case .kitana: .init(move: .squareWave, first: .down, second: .left, button: 2, name: "Square wave")
+		case .smoke: .init(move: .smokeStrike, first: .down, second: .left, button: 1, name: "Smoke strike")
+		case .liuKang: .init(move: .bicycleKick, first: .left, second: .right, button: 2, name: "Bicycle kick")
+		}
+	}
+
+	public var stringOne: StringCommand {
+		switch self {
+		case .scorpion: .init(name: "Hellfire rush", direction: .right, firstButton: 1, secondButton: 0, starter: .scorpionStringStart, finisher: .scorpionStringEnd)
+		case .subZero: .init(name: "Frost hammer", direction: .left, firstButton: 1, secondButton: 1, starter: .subZeroStringStart, finisher: .subZeroStringEnd)
+		case .jade: .init(name: "Staff dance", direction: .right, firstButton: 2, secondButton: 3, starter: .jadeStringStart, finisher: .jadeStringEnd)
+		case .sektor: .init(name: "Thruster combo", direction: .right, firstButton: 3, secondButton: 3, starter: .sektorStringStart, finisher: .sektorStringEnd)
+		case .cyrax: .init(name: "Cyber crush", direction: .right, firstButton: 1, secondButton: 2, starter: .cyraxStringStart, finisher: .cyraxStringEnd)
+		case .kitana: .init(name: "Royal grace", direction: .left, firstButton: 1, secondButton: 0, starter: .kitanaStringStart, finisher: .kitanaStringEnd)
+		case .smoke: .init(name: "Vapor trail", direction: .right, firstButton: 2, secondButton: 1, starter: .smokeStringStart, finisher: .smokeStringEnd)
+		case .liuKang: .init(name: "Dragon's tail", direction: .right, firstButton: 2, secondButton: 2, starter: .liuKangStringStart, finisher: .liuKangStringEnd)
+		}
+	}
 
 	/// Overall effectiveness includes movement, recovery and ease of converting special hits.
 	public var strength: String {

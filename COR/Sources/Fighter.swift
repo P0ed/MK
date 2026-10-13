@@ -33,7 +33,7 @@ public struct Fighter: Sendable {
 		!airborne && (
 			pose == .crouch || (pose == .guard && input.vertical < 0)
 				|| move == .crouch1 || move == .uppercut || move == .lowKick
-				|| move == .sweep || move == .slide
+				|| move == .sweep || move == .slide || move == .takedown
 		)
 	}
 	public var intangible: Bool {
@@ -79,21 +79,35 @@ public struct Fighter: Sendable {
 	private mutating func ingest(_ state: Input, pressed: Input, frame: Int) {
 		let dash = history.record(state, facing: facing, frame: frame)
 		if dash != 0 { pendingDash = dash }
+		if state.contains([.left, .right]) || state.contains([.up, .down]) { pendingDash = 0 }
 		if pressed.contains(.up), state.vertical > 0 { pendingJump = true }
 		input = state
 		for button in 0 ..< 4 where pressed.contains(.attack(button)) {
 			guard queueCount < queue.count else { continue }
 			if let move = special(character: character, button: button, history: history, frame: frame) {
-				queue[queueCount] = .init(move: move, expires: frame + 6)
+				let previous = queueCount > 0 ? queue[queueCount - 1].move : self.move
+				let predecessor = previous.isSpecial ? MoveID.none : previous
+				queue[queueCount] = .init(move: move, predecessor: predecessor, expires: frame + (predecessor == .none ? 14 : 30))
 				history.consumedFrame = frame
 			} else {
 				var predecessor = move
 				for i in 0 ..< queueCount { predecessor = queue[i].move }
-				if let next = predecessor.continuation(button) {
+				let string = character.stringOne
+				let relativeHorizontal = state.horizontal * facing
+				let direction = relativeHorizontal < 0 ? Input.left : relativeHorizontal > 0 ? .right : []
+				let directional: MoveID? = !airborne && state.vertical == 0
+					? (direction == .left && button == 0 ? .backPunch
+						: direction == string.direction && button == string.firstButton ? string.starter : nil)
+					: nil
+				if predecessor.isUniqueStringStarter, let next = predecessor.continuation(button) {
+					queue[queueCount] = .init(move: next, predecessor: predecessor, expires: frame + 60)
+				} else if let directional {
+					queue[queueCount] = .init(move: directional, expires: frame + 14)
+				} else if let next = predecessor.continuation(button) {
 					queue[queueCount] = .init(move: next, predecessor: predecessor, expires: frame + 60)
 				} else {
 					let base = airborne ? MoveID.air1.rawValue : state.vertical < 0 ? MoveID.crouch1.rawValue : MoveID.punch1.rawValue
-					queue[queueCount] = .init(move: MoveID(rawValue: base + UInt8(button))!, expires: frame + 6)
+					queue[queueCount] = .init(move: MoveID(rawValue: base + UInt8(button))!, expires: frame + 14)
 				}
 			}
 			queueCount += 1
@@ -151,14 +165,15 @@ extension Fighter {
 		let data = moveData
 		let reach = data.reach
 		var bottom: Int32 = 205
-		var top: Int32 = 430
+		var top: Int32 = 600
 		switch data.level {
-		case .high: bottom = 340; top = 465
+		case .high: bottom = 340; top = 600
 		case .mid: break
 		case .low: bottom = 25; top = 145
-		case .overhead: bottom = 180; top = 510
+		case .overhead: bottom = 180; top = 600
 		}
-		if move == .uppercut || move == .string212 || move == .teleportUppercut || move == .fanLift { bottom = 90; top = 660 }
+		if data.effect == .launch, !move.isProjectile { bottom = 90; top = 660 }
+		if move == .iceBurst { bottom = 90; top = 660 }
 		if move == .smokeTeleport { bottom = 40; top = 360 }
 		return .init(left: x + (facing > 0 ? 40 : -reach), bottom: y + bottom,
 			right: x + (facing > 0 ? reach : -40), top: y + top)

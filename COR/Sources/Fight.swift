@@ -63,6 +63,7 @@ public struct Fight: ~Copyable {
 	public private(set) var round = 1
 	public private(set) var winner: Int?
 	public private(set) var hitstop = 0
+	public let practice: Bool
 
 	/// Results can be presented once the defeated fighter's last airborne arc has landed.
 	public var defeatedSettled: Bool {
@@ -73,16 +74,19 @@ public struct Fight: ~Copyable {
 		return true
 	}
 
-	public init(_ first: Character = .scorpion, _ second: Character = .sektor) {
+	public init(_ first: Character = .scorpion, _ second: Character = .sektor, practice: Bool = false) {
 		fighters = [.init(character: first, side: 0), .init(character: second, side: 1)]
+		self.practice = practice
+		if practice { phase = .fighting }
 	}
 
 	init(fighters: consuming InlineArray<2, Fighter>, phase: Phase = .fighting, round: Int = 1,
-		projectiles: consuming InlineArray<2, Projectile> = .init(repeating: .init())) {
+		projectiles: consuming InlineArray<2, Projectile> = .init(repeating: .init()), practice: Bool = false) {
 		self.fighters = fighters
 		self.phase = phase
 		self.round = round
 		self.projectiles = projectiles
+		self.practice = practice
 	}
 
 	/// The only combat entry point. Results and runtime storage stay inline.
@@ -156,6 +160,21 @@ public struct Fight: ~Copyable {
 			fighters[i].clearCommands()
 		}
 	}
+
+	/// Restart drills without an intro, leftover inputs or a scored round.
+	public mutating func resetPractice() {
+		guard practice else { return }
+		for i in 0 ..< 2 {
+			fighters[i] = .init(character: fighters[i].character, side: i)
+			projectiles[i] = .init()
+		}
+		frame = 0
+		phase = .fighting
+		phaseFrame = 0
+		round = 1
+		winner = nil
+		hitstop = 0
+	}
 }
 
 extension Fight {
@@ -174,6 +193,7 @@ extension Fight {
 			if fighter.stun == 0 {
 				fighter.pose = fighter.airborne ? .jump : .idle
 				fighter.caughtBy = .none
+				if !fighter.airborne { fighter.resetChain() }
 			}
 		} else {
 			if !fighter.airborne { fighter.resetChain() }
@@ -190,8 +210,10 @@ extension Fight {
 			}
 			if fighter.queueCount > 0, fighter.dashFrames == 0, !fighter.input.contains(.block) {
 				let command = fighter.queue[0]
-				let continuation = command.predecessor != .none && command.predecessor == fighter.move && fighter.moveFrame >= fighter.moveData.linkFrame
-				let cancel = command.move.isSpecial && fighter.connected && fighter.moveFrame >= fighter.moveData.cancelStart && fighter.moveFrame <= fighter.moveData.cancelEnd
+				let continuation = !command.move.isSpecial && command.predecessor != .none && command.predecessor == fighter.move && fighter.moveFrame >= fighter.moveData.linkFrame
+				let cancel = command.move.isSpecial && !fighter.move.isSpecial && fighter.connected
+					&& (command.predecessor == .none || command.predecessor == fighter.move)
+					&& fighter.moveFrame >= fighter.moveData.cancelStart && fighter.moveFrame <= fighter.moveData.cancelEnd
 				let neutral = fighter.move == .none && command.predecessor == .none
 				let allowed = !command.move.isSpecial || !fighter.airborne
 				let projectileAvailable = !command.move.isProjectile || !projectiles[index].active
@@ -265,6 +287,10 @@ extension Fight {
 				if move == .slide || move == .shadowKick || move == .flyingKick {
 					let speed: Int32 = move == .flyingKick ? 48 : 30
 					fighter.vx = !fighter.contacted && fighter.moveFrame >= fighter.moveData.startup && fighter.moveFrame < fighter.moveData.startup + fighter.moveData.active ? fighter.facing * speed : 0
+				} else if fighter.moveData.advanceSpeed > 0, !fighter.airborne {
+					let distance = max(0, (fighters[1 - index].x - fighter.x) * fighter.facing - 150)
+					fighter.vx = !fighter.contacted && fighter.moveFrame < fighter.moveData.startup + fighter.moveData.active
+						? fighter.facing * min(fighter.moveData.advanceSpeed, distance) : 0
 				}
 			}
 			fighter.x += fighter.vx
@@ -273,7 +299,7 @@ extension Fight {
 		fighter.pendingJump = false
 		if fighter.airborne, fighter.pose != .frozen {
 			fighter.y += fighter.vy
-			fighter.vy -= 4 + Int32(fighter.chainHits)
+			fighter.vy -= 4 + Int32(min(3, fighter.chainHits / 3))
 			if fighter.y <= 0 {
 				fighter.y = 0
 				fighter.vy = 0
@@ -370,23 +396,27 @@ extension Fight {
 			victim.resetChain()
 			hitstop = max(hitstop, 3)
 		} else {
-			damage = max(1, data.damage * max(25, 100 - victim.chainHits * 12) / 100)
+			damage = max(1, data.damage * max(20, 100 - victim.chainHits * 8) / 100)
 			victim.chainHits += 1
 			victim.chainDamage += damage
 			victim.stun = data.hitstun
 			victim.pose = .hit
 			victim.move = .none
 			victim.dashFrames = 0
-			victim.vx = fighters[source].facing * 10
+			victim.vx = fighters[source].facing * (victim.chainHits > 1 ? 5 : 8)
 			victim.clearCommands()
 			victim.caughtBy = .none
 			switch data.effect {
-			case .strike: break
+			case .strike:
+				// A follow-up keeps a falling juggle reachable without granting another launcher.
+				if victim.airborne, victim.falling { victim.vy = max(victim.vy, 20) }
 			case .launch:
 				if !victim.launched {
-					victim.vy = 78
+					victim.vy = data.launchSpeed
 					victim.launched = true
 					victim.falling = true
+				} else if victim.airborne, victim.falling {
+					victim.vy = max(victim.vy, 20)
 				}
 			case .knockdown:
 				victim.vy = max(victim.vy, 20)
@@ -409,13 +439,14 @@ extension Fight {
 			fighters[source].comboFrame = frame
 			hitstop = max(hitstop, 4)
 		}
-		victim.health = max(0, victim.health - damage)
+		if !practice { victim.health = max(0, victim.health - damage) }
 		fighters[target] = victim
 		events.add(.init(kind: contact.blocked ? .block : .hit, player: source, move: contact.move,
 			damage: damage, x: victim.x, y: victim.y + 330))
 	}
 
 	private mutating func finishRound(events: inout FrameEvents) {
+		guard !practice else { return }
 		guard fighters[0].health == 0 || fighters[1].health == 0 else { return }
 		phase = .roundEnd
 		phaseFrame = 0

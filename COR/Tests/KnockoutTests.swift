@@ -26,7 +26,7 @@ struct KnockoutTests {
 		#expect(fight.phase == .matchEnd)
 		#expect(fight.phaseFrame == 0)
 		#expect(fight.fighters[1].health == 0)
-		#expect(fight.fighters[1].vy == 78)
+		#expect(fight.fighters[1].vy == 56)
 		#expect(fight.defeatedSettled == false)
 		#expect(fight.fighters[0].move == .none)
 		#expect(fight.fighters[0].wins == 2)
@@ -34,8 +34,8 @@ struct KnockoutTests {
 		let firstLandingFrame = endingTick(&fight, pressed: true)
 		#expect(firstLandingFrame.count == 0)
 		#expect(fight.phaseFrame == 1)
-		#expect(fight.fighters[1].y == 78)
-		#expect(fight.fighters[1].vy < 78)
+		#expect(fight.fighters[1].y == 56)
+		#expect(fight.fighters[1].vy < 56)
 		let winnerHealth = fight.fighters[0].health
 		for _ in 0 ..< 89 {
 			let events = endingTick(&fight, pressed: fight.frame % 2 == 0)

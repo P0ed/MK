@@ -26,7 +26,7 @@ public struct AI {
 	}
 
 	public mutating func input(_ fight: borrowing Fight, player: Int = 1) -> InputFrame {
-		guard fight.phase == .fighting else { reset(); return .init() }
+		guard fight.phase == .fighting, !fight.practice else { reset(); return .init() }
 		let fighter = fight.fighters[player]
 		let opponent = fight.fighters[1 - player]
 		let seen = observations[cursor]
@@ -78,14 +78,24 @@ public struct AI {
 			for i in 0 ..< 3 { sequence[i] = command.input(at: i, facing: fighter.facing) }
 			length = 4
 			wait = 34
-		} else if roll < 23 {
+		} else if roll < 20 {
+			let command = fighter.character.commandThree
+			for i in 0 ..< 3 { sequence[i] = command.input(at: i, facing: fighter.facing) }
+			length = 4
+			wait = 30
+		} else if roll < 27 {
 			sequence[0] = [.up, forward]
 			sequence[9] = .four
 			length = 11
-		} else if roll < 30 {
+		} else if roll < 34 {
 			sequence[0] = [.down, .three]
 			length = 2
 			wait = 22
+		} else if roll < 62 {
+			let string = fighter.character.stringOne
+			for i in 0 ..< 4 { sequence[i] = string.input(at: i, facing: fighter.facing) }
+			length = 4
+			wait = 28
 		} else {
 			sequence[0] = roll < 65 ? .one : .two
 			sequence[2] = .one

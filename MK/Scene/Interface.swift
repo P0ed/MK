@@ -87,9 +87,9 @@ final class HUD: UIView {
 
 	required init?(coder: NSCoder) { fatalError() }
 
-	func configure(_ first: Character, _ second: Character) {
+	func configure(_ first: Character, _ second: Character, practice: Bool = false) {
 		names[0].text = first.name
-		names[1].text = second.name
+		names[1].text = practice ? "DUMMY · \(second.name)" : second.name
 		bars[0].color(first.color)
 		bars[1].color(second.color)
 		health = .init(repeating: -1)
@@ -104,17 +104,21 @@ final class HUD: UIView {
 				health[i] = fighter.health
 				bars[i].progress = CGFloat(fighter.health) / CGFloat(Fighter.maxHealth)
 			}
-			if scores[i] != fighter.wins {
+			if fight.practice {
+				wins[i].text = "∞ HEALTH"
+			} else if scores[i] != fighter.wins {
 				scores[i] = fighter.wins
 				wins[i].text = String(repeating: "● ", count: fighter.wins) + String(repeating: "○ ", count: 2 - fighter.wins)
 			}
-			combos[i].isHidden = fighter.comboHits < 2 || fight.frame - fighter.comboFrame > 90
+			combos[i].isHidden = fighter.comboHits < (fight.practice ? 1 : 2) || fight.frame - fighter.comboFrame > 90
 			if !combos[i].isHidden {
-				let text = "\(fighter.comboHits) HITS  ·  \(fighter.comboDamage / 10)%"
+				let damage = fighter.comboDamage * 100 / Fighter.maxHealth
+				let text = "\(fighter.comboHits) \(fighter.comboHits == 1 ? "HIT" : "HITS")  ·  \(damage)%"
 				if combos[i].text != text { combos[i].text = text }
 			}
 		}
-		if roundNumber != fight.round { roundNumber = fight.round; round.text = "ROUND \(fight.round)" }
+		if fight.practice { round.text = "PRACTICE" }
+		else if roundNumber != fight.round { roundNumber = fight.round; round.text = "ROUND \(fight.round)" }
 		let text: String
 		switch fight.phase {
 		case .intro: text = fight.phaseFrame < 40 ? "ROUND \(fight.round)" : "FIGHT"
@@ -194,7 +198,8 @@ final class MenuOverlay: UIView {
 		title.frame = CGRect(x: 20, y: 31, width: w - 40, height: 43)
 		title.font = .systemFont(ofSize: min(36, h * 0.10), weight: .heavy)
 		subtitle.frame = CGRect(x: 24, y: 77, width: w - 48, height: 22)
-		let rowHeight = min(43, max(32, h * 0.105))
+		let available = h - 148 - CGFloat(max(0, buttons.count - 1)) * 7
+		let rowHeight = min(43, max(24, min(h * 0.105, available / CGFloat(max(1, buttons.count)))))
 		let total = CGFloat(buttons.count) * (rowHeight + 7) - 7
 		let start = min(max(106, (h - total) / 2 + 25), h - total - 42)
 		let width = min(310, w * 0.47)
@@ -243,19 +248,21 @@ final class SelectionView: UIView {
 
 	required init?(coder: NSCoder) { fatalError() }
 
-	func update(_ choices: borrowing InlineArray<2, Character>, ready: borrowing InlineArray<2, Bool>, inputs: InputController, solo: Bool, cursor: Int) {
-		hint.text = solo ? (cursor == 0 ? "Stronger fighters ease the challenge · A / Enter to ready" : "Stronger opponents raise the challenge · A / Enter to fight") : "Each player chooses with their own D-pad · A / Enter to ready"
+	func update(_ choices: borrowing InlineArray<2, Character>, ready: borrowing InlineArray<2, Bool>, inputs: InputController, solo: Bool, cursor: Int, practice: Bool = false) {
+		title.text = practice ? "CHOOSE YOUR FIGHTER & DUMMY" : "CHOOSE YOUR FIGHTER"
+		hint.text = practice ? (cursor == 0 ? "Choose your fighter · A / Enter to ready" : "Choose the idle dummy · Infinite health · A / Enter to practice") : solo ? (cursor == 0 ? "Stronger fighters ease the challenge · A / Enter to ready" : "Stronger opponents raise the challenge · A / Enter to fight") : "Each player chooses with their own D-pad · A / Enter to ready"
 		for i in 0 ..< 2 {
-			names[i].text = "\(solo && i == 1 ? "CPU" : "PLAYER \(i + 1)")  ·  \(choices[i].name)\(ready[i] ? "  ✓" : "")"
+			let seat = i == 1 && practice ? "DUMMY" : solo && i == 1 ? "CPU" : "PLAYER \(i + 1)"
+			names[i].text = "\(seat)  ·  \(choices[i].name)\(ready[i] ? "  ✓" : "")"
 			names[i].textColor = choices[i].color
-			let device = solo && i == 1 ? "Local opponent" : inputs.name(for: i)
+			let device = i == 1 && practice ? "No AI · Infinite health" : solo && i == 1 ? "Local opponent" : inputs.name(for: i)
 			devices[i].text = "\(device)\n\(choices[i].strength) · \(choices[i].playstyle)"
 		}
 		for (index, card) in cards.enumerated() {
 			let character = Character(rawValue: UInt8(index))!
 			var suffix = ""
 			if choices[0] == character { suffix += " · P1" }
-			if choices[1] == character { suffix += solo ? " · CPU" : " · P2" }
+			if choices[1] == character { suffix += practice ? " · DUMMY" : solo ? " · CPU" : " · P2" }
 			card.setTitle(character.name + suffix + "\n" + character.strength, for: .normal)
 			card.accessibilityLabel = character.name + suffix + ", " + character.strength + ", " + character.playstyle
 			card.focus(choices[cursor] == character)
@@ -294,8 +301,11 @@ final class SelectionView: UIView {
 
 final class ControlsView: UIView {
 	private let title = label(25, weight: .heavy)
+	private let hint = label(10, color: Colors.muted)
 	private let left = label(13, color: .white)
 	private let right = label(13, color: .white)
+	private let leftScroll = UIScrollView()
+	private let rightScroll = UIScrollView()
 	private let back: MenuButton
 
 	init(back action: @escaping () -> Void) {
@@ -304,26 +314,49 @@ final class ControlsView: UIView {
 		backgroundColor = Colors.background.withAlphaComponent(0.95)
 		title.text = "CONTROLS & MOVES"
 		title.textAlignment = .center
+		hint.text = "↑ / ↓ or swipe to scroll · A / Enter to go back"
+		hint.textAlignment = .center
 		left.numberOfLines = 0; right.numberOfLines = 0
-		left.text = "D-PAD / ARROWS\nMove · crouch · jump\nDouble-tap F / B: dash\n\n1  X / Square  or A\n2  Y / Triangle  or S\n3  A / Cross  or Z\n4  B / Circle  or X\n\nBLOCK  RT / R2 / Space\nPAUSE  Menu / Escape\n\nStand-block overheads.\nCrouch-block lows."
-		for view in [title, left, right, back] { addSubview(view) }
+		left.text = "D-PAD / ARROWS\nMove · crouch · jump\nDouble-tap F / B: dash\n\n1  X / Square  or A\n2  Y / Triangle  or S\n3  A / Cross  or Z\n4  B / Circle  or X\n\nBLOCK  RT / R2 / Space\nPAUSE  Menu / Escape\n\nStand-block overheads.\nCrouch-block lows.\n\nSHARED STRINGS\n1, 1, 2  ·  knockdown\n2, 1, 2  ·  launcher\n3, 4     ·  low\nB + 1    ·  launcher\n\nF / B = toward / away\nD = down\n\nCancel strings into specials.\nFollow launchers with attacks.\n\nPRACTICE\nIdle dummy · Infinite health\nPause → Reset Practice"
+		leftScroll.addSubview(left)
+		rightScroll.addSubview(right)
+		for scroll in [leftScroll, rightScroll] { scroll.indicatorStyle = .white; scroll.alwaysBounceVertical = true }
+		for view in [title, hint, leftScroll, rightScroll, back] { addSubview(view) }
 	}
 
 	required init?(coder: NSCoder) { fatalError() }
 
 	func configure(_ first: Character, _ second: Character) {
-		right.text = "STRINGS\n1, 1, 2  ·  knockdown\n2, 1, 2  ·  launcher\n3, 4     ·  low\n\n\(first.name)\n\(first.moves)\n\n\(second.name)\n\(second.moves)\n\nF / B = toward / away"
+		right.text = "\(first.name)\n\(first.stringOne.hint)\n\(first.moves)\n\n\(second.name)\n\(second.stringOne.hint)\n\(second.moves)"
+		leftScroll.setContentOffset(.zero, animated: false)
+		rightScroll.setContentOffset(.zero, animated: false)
+		setNeedsLayout()
+	}
+
+	func scroll(_ direction: Int) {
+		for scroll in [leftScroll, rightScroll] {
+			let end = max(0, scroll.contentSize.height - scroll.bounds.height)
+			let offset = min(end, max(0, scroll.contentOffset.y + CGFloat(direction) * 60))
+			scroll.setContentOffset(CGPoint(x: 0, y: offset), animated: true)
+		}
 	}
 
 	override func layoutSubviews() {
 		super.layoutSubviews()
 		let w = bounds.width, h = bounds.height
-		title.frame = CGRect(x: 20, y: 12, width: w - 40, height: 32)
+		title.frame = CGRect(x: 20, y: 8, width: w - 40, height: 30)
+		hint.frame = CGRect(x: 20, y: 38, width: w - 40, height: 14)
 		let size: CGFloat = h < 400 ? 12 : 15
 		left.font = .monospacedSystemFont(ofSize: size, weight: .regular)
 		right.font = .monospacedSystemFont(ofSize: size, weight: .regular)
-		left.frame = CGRect(x: w * 0.09, y: 49, width: w * 0.40, height: h - 107)
-		right.frame = CGRect(x: w * 0.54, y: 49, width: w * 0.40, height: h - 107)
+		leftScroll.frame = CGRect(x: w * 0.06, y: 57, width: w * 0.43, height: h - 115)
+		rightScroll.frame = CGRect(x: w * 0.53, y: 57, width: w * 0.43, height: h - 115)
+		for (scroll, text) in [(leftScroll, left), (rightScroll, right)] {
+			let width = scroll.bounds.width - 8
+			let height = text.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+			text.frame = CGRect(x: 0, y: 0, width: width, height: height)
+			scroll.contentSize = CGSize(width: scroll.bounds.width, height: height)
+		}
 		back.frame = CGRect(x: w / 2 - 75, y: h - 47, width: 150, height: 33)
 	}
 }

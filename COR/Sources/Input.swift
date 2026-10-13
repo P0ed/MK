@@ -73,27 +73,45 @@ struct CommandHistory: Sendable {
 	var count = 0
 	var direction: Input = []
 	var consumedFrame = -100
+	private var physicalDirection: Input = []
+	private var dashTapDirection: Input = []
+	private var dashTapFrame = -100
+	private var dashReleased = false
 
 	mutating func record(_ input: Input, facing: Int32, frame: Int) -> Int32 {
+		let dash = recordDash(input, frame: frame)
 		var relative = input.direction
 		if facing < 0 {
 			relative.remove([.left, .right])
 			if input.horizontal < 0 { relative.insert(.right) }
 			if input.horizontal > 0 { relative.insert(.left) }
 		}
-		guard relative != direction else { return 0 }
+		guard relative != direction else { return dash }
 		direction = relative
 		samples[cursor] = .init(frame: frame, direction: relative)
 		cursor = (cursor + 1) % samples.count
 		count = min(count + 1, samples.count)
 
-		// A neutral release is required between two taps. Diagonals don't dash.
-		guard relative == .right || relative == .left, count >= 3 else { return 0 }
-		let neutral = samples[(cursor + samples.count - 2) % samples.count]
-		let previous = samples[(cursor + samples.count - 3) % samples.count]
-		guard neutral.direction.isEmpty, previous.direction == relative,
-			frame - previous.frame <= 10 else { return 0 }
-		return relative == .right ? facing : -facing
+		return dash
+	}
+
+	private mutating func recordDash(_ input: Input, frame: Int) -> Int32 {
+		let previous = physicalDirection
+		physicalDirection = input.intersection(.directions)
+		// Dashes need two physical taps and a true neutral release. Opposing keys
+		// must not masquerade as neutral, and holding a direction stays walking.
+		guard !input.contains(.block), physicalDirection.isEmpty || physicalDirection == .left || physicalDirection == .right else {
+			dashTapDirection = []
+			dashReleased = false
+			return 0
+		}
+		if physicalDirection.isEmpty { dashReleased = true; return 0 }
+		guard !previous.contains(physicalDirection) else { return 0 }
+		let doubleTap = dashReleased && physicalDirection == dashTapDirection && frame - dashTapFrame <= 20
+		dashTapDirection = physicalDirection
+		dashTapFrame = frame
+		dashReleased = false
+		return doubleTap ? input.horizontal : 0
 	}
 
 	func matches(_ first: Input, _ second: Input, frame: Int) -> Bool {

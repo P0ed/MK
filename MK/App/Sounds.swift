@@ -72,23 +72,25 @@ final class Sounds {
 			switch event.move {
 			case .rocket: play(.explode)
 			case .net: play(.net)
-			case .fan, .fanLift: play(.fan)
-			case .smokeCloud, .smokeTeleport: play(.smoke)
-			case .fireball: play(.fire)
+			case .fan, .fanLift, .squareWave: play(.fan)
+			case .smokeCloud, .smokeTeleport, .smokeStrike: play(.smoke)
+			case .fireball, .flameBurner: play(.fire)
+			case .iceBurst: play(.ice)
+			case .staffSpin, .buzzsaw: play(.rang)
 			default: play(event.move.isKick ? .kick : .punch)
 			}
 		case .special:
 			switch event.move {
 			case .spear: play(.spear)
-			case .ice: play(.ice)
-			case .rang: play(.rang)
+			case .ice, .iceBurst: play(.ice)
+			case .rang, .staffSpin, .buzzsaw: play(.rang)
 			case .rocket: play(.rocket)
 			case .teleport, .teleportUppercut: play(.teleport)
 			case .net: play(.net)
 			case .bomb: play(.bomb)
-			case .fan, .fanLift: play(.fan)
-			case .smokeCloud, .smokeTeleport: play(.smoke)
-			case .fireball: play(.fire)
+			case .fan, .fanLift, .squareWave: play(.fan)
+			case .smokeCloud, .smokeTeleport, .smokeStrike: play(.smoke)
+			case .fireball, .flameBurner: play(.fire)
 			default: play(.kick)
 			}
 		case .detonate: play(.explode)

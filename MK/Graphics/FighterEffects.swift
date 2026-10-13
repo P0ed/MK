@@ -96,7 +96,7 @@ final class FighterEffects {
 		for i in particles.indices { charge.addChild(particles[i]); motion.addChild(ribbons[i]); shards.addChild(crystals[i]); landing.addChild(dust[i]) }
 		for i in departurePuffs.indices { departure.addChild(departurePuffs[i]); arrival.addChild(arrivalPuffs[i]) }
 		for i in travelBars.indices { travel.addChild(travelBars[i]) }
-		if character == .jade || character == .subZero || character == .liuKang {
+		if character == .jade || character == .subZero || character == .liuKang || character == .kitana || character == .scorpion {
 			for _ in 0 ..< 3 {
 				let echo = MotionEcho(body: body, color: color)
 				owner.addChild(echo.root)
@@ -122,41 +122,78 @@ final class FighterEffects {
 		}
 		let startup = Float(max(1, data.startup))
 		let activeEnd = Float(data.startup + data.active)
-		let launching = alive && move.isProjectile
+		let meleeCharge = move == .iceBurst || move == .flameBurner || move == .buzzsaw
+		let launching = alive && (move.isProjectile || meleeCharge)
 		let build = launching ? sin(min(1, elapsed / startup) * .pi) * 0.8 + max(0, 1 - abs(elapsed - startup) / 5) * 0.5 : 0
+		let activeGlow = alive && meleeCharge ? smooth((elapsed - startup + 3) / 3) * (1 - smooth((elapsed - activeEnd) / 6)) : 0
 		var source = SIMD3<Float>(0.70, 1.30, 0.10)
 		if move == .net { source = [0.30, 1.25, 0] }
 		if move == .rocket { source = [0.23, 1.60, -0.29] }
 		if move == .bomb { source = [0.40, 0.78, 0.15] }
 		if move == .fireball { source.y = 1.05 }
+		if move == .iceBurst { source = [0.55, 1.15, 0] }
+		if move == .flameBurner { source = [0.73, 1.22, 0.12] }
+		if move == .buzzsaw { source = [0.76, 1.28, 0.15] }
 		charge.position = source
-		fade(charge, build)
+		fade(charge, max(build, activeGlow))
 		sourceRing.orientation = simd_quatf(angle: .pi / 2, axis: [0, 0, 1])
-		sourceRing.scale = .init(repeating: 0.22 + build * 0.25)
+		if move == .buzzsaw {
+			sourceRing.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+		}
+		sourceRing.scale = .init(repeating: move == .buzzsaw ? 0.48 : 0.22 + build * 0.25)
 		for i in particles.indices {
-			let angle = time * 0.21 + Float(i) * .pi / 4
-			particles[i].position = [cos(angle) * 0.14, sin(angle) * 0.16, Float(i % 3 - 1) * 0.07]
+			let angle = time * (move == .buzzsaw ? 1.1 : 0.21) + Float(i) * .pi / 4
+			let radius: Float = move == .buzzsaw ? 0.25 : 0.14
+			particles[i].position = [cos(angle) * radius, sin(angle) * radius, Float(i % 3 - 1) * 0.07]
 			particles[i].orientation = simd_quatf(angle: angle, axis: [0, 0, 1])
+			particles[i].scale = move == .buzzsaw ? [0.14, 0.06, 0.04] : [0.08, 0.03, 0.03]
 		}
 
 		let rushing = move == .slide || move == .shadowKick || move == .flyingKick || move == .teleportUppercut
-		let rush = alive && rushing ? smooth((elapsed - startup + 3) / 3) * (1 - smooth((elapsed - activeEnd) / 8)) : 0
+			|| move == .takedown || move == .squareWave || move == .bicycleKick
+		let striking = move == .staffSpin || move == .flameBurner || move == .buzzsaw || move == .smokeStrike
+		let rush = alive && (rushing || striking) ? smooth((elapsed - startup + 3) / 3) * (1 - smooth((elapsed - activeEnd) / 8)) : 0
 		fade(motion, rush * 0.75)
 		for i in ribbons.indices {
 			let phase = time * 0.16 + Float(i) * 0.8
-			let height: Float = move == .slide ? 0.13 : move == .teleportUppercut ? 0.2 + Float(i) * 0.12 : 0.72
+			let height: Float = move == .slide || move == .takedown ? 0.13 : move == .teleportUppercut ? 0.2 + Float(i) * 0.12 : 0.72
 			ribbons[i].position = [-0.18 - Float(i) * 0.09, height + sin(phase) * 0.09, Float(i % 3 - 1) * 0.16]
 			ribbons[i].scale = [0.35 + rush * 0.20, 0.03 + rush * 0.025, 0.035]
 			ribbons[i].orientation = simd_quatf(angle: move == .teleportUppercut ? .pi / 2 : sin(phase) * 0.15, axis: [0, 0, 1])
+			switch move {
+			case .flameBurner:
+				let progress = Float(i) / Float(ribbons.count - 1)
+				let length = max(0, Float(data.reach) / 256 - 0.8 - 0.225)
+				ribbons[i].position = [0.8 + progress * length,
+					1.22 + sin(time * 0.8 + Float(i)) * (0.05 + progress * 0.13), Float(i % 2) * 0.04]
+				ribbons[i].scale = [0.45, 0.13 + progress * 0.10, 0.10]
+			case .staffSpin:
+				let angle = elapsed * 0.7 + Float(i) * .pi / 4
+				ribbons[i].position = [0.7 + cos(angle) * 0.62, 1.30 + sin(angle) * 0.62, 0.12]
+				ribbons[i].orientation = simd_quatf(angle: angle + .pi / 2, axis: [0, 0, 1])
+				ribbons[i].scale = [0.34, 0.035, 0.035]
+			case .buzzsaw:
+				ribbons[i].position = [0.8 + Float(i) * 0.035, 1.28 + sin(phase * 3) * 0.27, 0.10]
+				ribbons[i].orientation = simd_quatf(angle: phase * 3, axis: [0, 0, 1])
+				ribbons[i].scale = [0.12, 0.025, 0.025]
+			case .smokeStrike:
+				ribbons[i].position = [0.4 + Float(i) * 0.08, 1.25 + sin(phase) * 0.14, Float(i % 3 - 1) * 0.07]
+				ribbons[i].scale = [0.30, 0.11, 0.10]
+			case .bicycleKick:
+				ribbons[i].position.y = 0.5 + Float(i % 4) * 0.22
+			case .squareWave:
+				ribbons[i].position.y += 0.35
+			default: break
+			}
 		}
 
-		let frozen = pose == .frozen && caughtBy == .ice
-		let cold = frozen ? 0.85 : move == .ice ? build : move == .slide ? rush * 0.65 : 0
+		let frozen = pose == .frozen && (caughtBy == .ice || caughtBy == .iceBurst)
+		let cold = frozen ? 0.85 : move == .ice ? build : move == .iceBurst ? max(build, activeGlow) : move == .slide ? rush * 0.65 : 0
 		fade(shards, cold)
 		for i in crystals.indices {
 			let angle = Float(i) * .pi / 4 + time * 0.025
 			crystals[i].position = frozen ? [cos(angle) * 0.32, 0.3 + Float(i) * 0.19, sin(angle) * 0.35]
-				: move == .ice ? source + SIMD3<Float>(sin(angle) * 0.25, cos(angle) * 0.24, 0)
+				: move == .ice || move == .iceBurst ? source + SIMD3<Float>(move == .iceBurst ? Float(i) * 0.07 : sin(angle) * 0.25, cos(angle) * 0.30, sin(angle) * 0.15)
 				: [-0.2 - Float(i) * 0.15, 0.12 + Float(i % 2) * 0.06, sin(angle) * 0.25]
 			crystals[i].orientation = simd_quatf(angle: angle, axis: [0, 0, 1])
 		}
@@ -185,7 +222,9 @@ final class FighterEffects {
 		let appear = teleporting ? smooth((elapsed - relocation + 1) / 3) * (1 - smooth((elapsed - relocation - 5) / 7)) : 0
 		let inverse = simd_inverse(owner.orientation)
 		departure.position = inverse.act(teleportOrigin - owner.position)
-		fade(departure, depart * 0.75); fade(arrival, appear * 0.7)
+		let smokePunch = alive && move == .smokeStrike
+		arrival.position = smokePunch ? [0.75, 0, 0] : .zero
+		fade(departure, depart * 0.75); fade(arrival, smokePunch ? rush * 0.55 : appear * 0.7)
 		for i in departurePuffs.indices {
 			let phase = time * 0.15 + Float(i)
 			let y = 0.16 + Float(i) * 0.27
@@ -193,6 +232,10 @@ final class FighterEffects {
 			arrivalPuffs[i].position = [cos(phase) * 0.23, y, sin(phase) * 0.24]
 			departurePuffs[i].scale = [0.20 + depart * 0.35, 0.30 + depart * 0.35, 0.20 + depart * 0.35]
 			arrivalPuffs[i].scale = [0.22 + appear * 0.30, 0.25 + appear * 0.4, 0.22 + appear * 0.30]
+			if smokePunch {
+				arrivalPuffs[i].position = [cos(phase) * 0.25, 0.9 + Float(i) * 0.10, sin(phase) * 0.18]
+				arrivalPuffs[i].scale = [0.24 + rush * 0.12, 0.28 + rush * 0.14, 0.24]
+			}
 		}
 		let distance = simd_length(owner.position - teleportOrigin)
 		let trailOpacity = teleporting && distance > 0.05 ? smooth((elapsed - relocation) / 2) * (1 - smooth((elapsed - relocation - 3) / 6)) : 0
